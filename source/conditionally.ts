@@ -1,24 +1,40 @@
-import {detectWebpSupport} from "./detect-webp-support";
-import {loadScript} from "./load-script";
 
-declare const webpHero;
+import type * as webpHeroModule from "."
 
-const _webpPolyfillUrl = window["webpPolyfillUrl"] || 'https://unpkg.com/webp-hero@0.0.2/dist-cjs/polyfills.js';
-const _webpBundleUrl = window["webpBundleUrl"] || 'https://unpkg.com/webp-hero@0.0.2/dist-cjs/webp-hero.bundle.js';
+import {detectWebpSupport} from "./detect-webp-support.js"
+import {getConditionallySettings} from "./utils/get-conditionally-settings.js"
+import {loadBundleAndMaybePolyfills} from "./utils/load-bundle-and-maybe-polyfills.js"
 
-/**
- * This code executes immediately, detects WebP support and loads the
- * webp-hero polyfill and bundle and as needed.
- *
- * Loads webp-hero from the unpkg CDN by default, specify alternate source URLs
- * by setting window["webpPolyfillUrl"] and window["webpBundleUrl"] before loading.
- */
-(async function() {
-	const webpSupported = await detectWebpSupport();
-	if (! webpSupported) {
-		await loadScript(_webpPolyfillUrl);
-		await loadScript(_webpBundleUrl);
-		var webpMachine = new webpHero.WebpMachine();
-		webpMachine.polyfillDocument();
+type WebpHeroResult = typeof webpHeroModule | void
+
+declare global {
+	interface Window {
+		webpHero: typeof webpHeroModule
+		webpHeroPromise: Promise<WebpHeroResult>
 	}
-})();
+}
+
+window.webpHeroPromise = Promise.resolve().then(async() => {
+	const {attributes, bundleUrl, polyfillsUrl}
+		= getConditionallySettings("script[data-webp-hero]")
+
+	const webpSupport = attributes.force
+		? false
+		: await detectWebpSupport()
+
+	if (! webpSupport) {
+		await loadBundleAndMaybePolyfills({bundleUrl, polyfillsUrl})
+		const {webpHero} = window
+
+		if (! attributes.useCustomBehavior) {
+			const webpMachine = new webpHero.WebpMachine({
+				webpSupport,
+				useCanvasElements: attributes.forceUseCanvasElements
+					? true
+					: undefined,
+			})
+			await webpMachine.polyfillDocument()
+		}
+		return webpHero
+	}
+})
